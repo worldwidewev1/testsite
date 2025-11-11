@@ -1,0 +1,679 @@
+# Astro Rolling Archive Starter
+
+Below is a complete, minimal skeleton you can drop into a new repo. Each section is a file. Create the same paths and paste the contents.
+
+---
+// FILE: package.json
+{
+  "name": "rolling-archive",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "astro": "^4.15.2",
+    "@astrojs/react": "^3.6.2",
+    "@astrojs/tailwind": "^5.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.170.0",
+    "@react-three/fiber": "^8.17.10",
+    "@react-three/drei": "^9.114.6",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
+
+---
+// FILE: tsconfig.json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ES2022",
+    "types": ["astro/client"],
+    "skipLibCheck": true
+  }
+}
+
+---
+// FILE: astro.config.mjs
+import { defineConfig } from 'astro/config';
+import react from '@astrojs/react';
+import tailwind from '@astrojs/tailwind';
+
+export default defineConfig({
+  integrations: [react(), tailwind({ applyBaseStyles: true })],
+  site: 'https://wev.world', // update later
+  output: 'static' // ensures a fully static build for GitHub Pages
+});
+
+---
+// FILE: tailwind.config.mjs
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    './src/**/*.{astro,html,js,jsx,ts,tsx,md,mdx}',
+  ],
+  theme: {
+    extend: {
+      fontFamily: {
+        sans: ["ui-sans-serif","system-ui","-apple-system","Segoe UI","Roboto","Inter","Noto Sans","sans-serif"],
+      }
+    },
+  },
+  plugins: [],
+}
+
+---
+// FILE: src/styles/global.css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light dark; }
+body { @apply bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100; }
+.container { @apply mx-auto max-w-6xl px-4; }
+
+---
+// FILE: src/layouts/BaseLayout.astro
+---
+const { title = 'Archive', description = 'Rolling portfolio', } = Astro.props;
+---
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <title>{title}</title>
+  </head>
+  <body>
+    <header class="border-b border-neutral-200/40 dark:border-neutral-800/60">
+      <div class="container py-4 flex items-center justify-between">
+        <a href="/" class="font-semibold tracking-tight">wev • archive</a>
+        <nav class="flex gap-4 text-sm">
+          <a href="/archive" class="hover:underline">Archive</a>
+          <a href="/events" class="hover:underline">Events</a>
+          <a href="/links" class="hover:underline">Links</a>
+          <a href="/about" class="hover:underline">About</a>
+        </nav>
+      </div>
+    </header>
+    <main class="container py-10">
+      <slot />
+    </main>
+    <footer class="container py-12 text-xs text-neutral-500">
+      © {new Date().getFullYear()} wev
+    </footer>
+  </body>
+</html>
+
+---
+// FILE: src/content/config.ts
+import { defineCollection, z } from 'astro:content';
+
+const baseFields = {
+  title: z.string(),
+  date: z.string().or(z.date()), // ISO date; normalized at runtime
+  cover: z.optional(z.string()), // path under /public or remote URL
+  excerpt: z.optional(z.string()),
+  links: z.optional(z.array(z.object({ label: z.string(), url: z.string().url() }))),
+  hasThree: z.optional(z.boolean()),
+  threeConfig: z.optional(z.string()) // JSON string to parametrize Three.js
+};
+
+const works = defineCollection({
+  type: 'content',
+  schema: z.object({ ...baseFields, tags: z.optional(z.array(z.string())) })
+});
+
+const releases = defineCollection({
+  type: 'content',
+  schema: z.object({
+    ...baseFields,
+    artist: z.optional(z.string()),
+    label: z.optional(z.string()),
+    platforms: z.optional(z.object({
+      spotify: z.optional(z.string()),
+      apple: z.optional(z.string()),
+      bandcamp: z.optional(z.string())
+    }))
+  })
+});
+
+const projects = defineCollection({
+  type: 'content',
+  schema: z.object({ ...baseFields, role: z.optional(z.string()), collaborators: z.optional(z.array(z.string())) })
+});
+
+const events = defineCollection({
+  type: 'content',
+  schema: z.object({
+    title: z.string(),
+    date: z.string(), // YYYY-MM-DD
+    city: z.string(),
+    venue: z.string(),
+    ticketUrl: z.optional(z.string()),
+    status: z.optional(z.enum(['scheduled','postponed','cancelled']))
+  })
+});
+
+const pages = defineCollection({
+  type: 'content',
+  schema: z.object({ title: z.string(), order: z.optional(z.number()) })
+});
+
+export const collections = { works, releases, projects, events, pages };
+
+---
+// FILE: src/components/ThreeBlock.tsx
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls } from '@react-three/drei';
+import React, { useMemo } from 'react';
+
+export default function ThreeBlock({ cfgJSON }: { cfgJSON?: string }) {
+  const cfg = useMemo(() => {
+    try { return cfgJSON ? JSON.parse(cfgJSON) : {}; } catch { return {}; }
+  }, [cfgJSON]);
+
+  return (
+    <div style={{ height: '40vh', width: '100%' }}>
+      <Canvas camera={{ position: [0, 0, 4] }}>
+        <ambientLight intensity={0.6} />
+        <mesh rotation={[0.2, 0.5, 0]}>
+          <torusGeometry args={[cfg.radius ?? 1, cfg.tube ?? 0.3, 32, 64]} />
+          <meshStandardMaterial metalness={0.2} roughness={0.4} />
+        </mesh>
+        <OrbitControls enablePan={false} />
+      </Canvas>
+    </div>
+  );
+}
+
+---
+// FILE: src/pages/index.astro
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+<BaseLayout title="wev • archive" description="Rolling portfolio of works, releases, and projects.">
+  <section class="prose prose-neutral dark:prose-invert max-w-none">
+    <h1 class="text-3xl font-semibold">Welcome</h1>
+    <p>This is a living portfolio: works, releases, projects, plus events & links.</p>
+  </section>
+  <div class="mt-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+    <a href="/archive" class="border p-6 rounded-xl hover:bg-neutral-50 dark:hover:bg-neutral-900">Browse Archive →</a>
+    <a href="/events" class="border p-6 rounded-xl hover:bg-neutral-50 dark:hover:bg-neutral-900">Upcoming Events →</a>
+    <a href="/links" class="border p-6 rounded-xl hover:bg-neutral-50 dark:hover:bg-neutral-900">Music & Social Links →</a>
+  </div>
+</BaseLayout>
+
+---
+// FILE: src/pages/archive.astro
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { getCollection } from 'astro:content';
+
+const works = await getCollection('works');
+const releases = await getCollection('releases');
+const projects = await getCollection('projects');
+
+function normalize(coll, type){
+  return coll.map(e => ({
+    type,
+    slug: e.slug,
+    data: e.data
+  }));
+}
+
+const all = [
+  ...normalize(works,'work'),
+  ...normalize(releases,'release'),
+  ...normalize(projects,'project')
+].sort((a,b) => new Date(b.data.date as any).getTime() - new Date(a.data.date as any).getTime());
+---
+<BaseLayout title="Archive">
+  <div class="flex items-center gap-3 mb-6 text-sm">
+    <span class="opacity-60">Filter:</span>
+    <a href="#" class="underline" onclick="filter('all'); return false;">All</a>
+    <a href="#" class="underline" onclick="filter('work'); return false;">Works</a>
+    <a href="#" class="underline" onclick="filter('release'); return false;">Releases</a>
+    <a href="#" class="underline" onclick="filter('project'); return false;">Projects</a>
+  </div>
+
+  <ul id="grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    {all.map((item) => (
+      <li class="border rounded-xl overflow-hidden group" data-type={item.type}>
+        <a href={`/${item.type}s/${item.slug}/`} class="block">
+          {item.data.cover && <img src={item.data.cover} alt={item.data.title} class="aspect-[4/3] w-full object-cover" />}
+          <div class="p-4">
+            <div class="text-xs uppercase tracking-wide opacity-60">{item.type}</div>
+            <h3 class="text-lg font-medium">{item.data.title}</h3>
+            {item.data.excerpt && <p class="text-sm opacity-80 line-clamp-2">{item.data.excerpt}</p>}
+          </div>
+        </a>
+      </li>
+    ))}
+  </ul>
+
+  <script is:inline>
+    function filter(type){
+      const items = document.querySelectorAll('#grid [data-type]');
+      items.forEach(el => {
+        const show = type === 'all' || el.getAttribute('data-type') === type;
+        el.classList.toggle('hidden', !show);
+      });
+    }
+  </script>
+</BaseLayout>
+
+---
+// FILE: src/pages/works/[slug].astro
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { getCollection, getEntryBySlug } from 'astro:content';
+import ThreeBlock from "../../components/ThreeBlock.tsx";
+
+export async function getStaticPaths() {
+  const entries = await getCollection('works');
+  return entries.map((e) => ({ params: { slug: e.slug }, props: { doc: e } }));
+}
+
+const { doc } = Astro.props as { doc: any };
+const data = doc.data;
+---
+<BaseLayout title={data.title}>
+  <article class="grid md:grid-cols-5 gap-8">
+    <div class="md:col-span-3 space-y-4">
+      {data.cover && <img src={data.cover} alt={data.title} class="rounded-xl" />}
+      <slot />
+    </div>
+    <aside class="md:col-span-2 space-y-2 text-sm">
+      <div class="opacity-60">{new Date(data.date).toLocaleDateString()}</div>
+      {data.links && (
+        <ul class="space-y-1">
+          {data.links.map((l:any) => <li><a class="underline" href={l.url} target="_blank">{l.label}</a></li>)}
+        </ul>
+      )}
+    </aside>
+  </article>
+  {data.hasThree && <ThreeBlock client:only="react" cfgJSON={data.threeConfig} />}
+</BaseLayout>
+
+---
+// FILE: src/pages/releases/[slug].astro
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { getCollection } from 'astro:content';
+import ThreeBlock from "../../components/ThreeBlock.tsx";
+
+export async function getStaticPaths() {
+  const entries = await getCollection('releases');
+  return entries.map((e) => ({ params: { slug: e.slug }, props: { doc: e } }));
+}
+
+const { doc } = Astro.props as { doc: any };
+const data = doc.data;
+---
+<BaseLayout title={data.title}>
+  <article class="grid md:grid-cols-5 gap-8">
+    <div class="md:col-span-3 space-y-4">
+      {data.cover && <img src={data.cover} alt={data.title} class="rounded-xl" />}
+      <slot />
+    </div>
+    <aside class="md:col-span-2 space-y-2 text-sm">
+      <div class="opacity-60">{new Date(data.date).toLocaleDateString()}</div>
+      {data.platforms && (
+        <ul class="space-y-1">
+          {data.platforms.spotify && <li><a class="underline" href={data.platforms.spotify} target="_blank">Spotify</a></li>}
+          {data.platforms.apple && <li><a class="underline" href={data.platforms.apple} target="_blank">Apple Music</a></li>}
+          {data.platforms.bandcamp && <li><a class="underline" href={data.platforms.bandcamp} target="_blank">Bandcamp</a></li>}
+        </ul>
+      )}
+    </aside>
+  </article>
+  {data.hasThree && <ThreeBlock client:only="react" cfgJSON={data.threeConfig} />}
+</BaseLayout>
+
+---
+// FILE: src/pages/projects/[slug].astro
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { getCollection } from 'astro:content';
+import ThreeBlock from "../../components/ThreeBlock.tsx";
+
+export async function getStaticPaths() {
+  const entries = await getCollection('projects');
+  return entries.map((e) => ({ params: { slug: e.slug }, props: { doc: e } }));
+}
+
+const { doc } = Astro.props as { doc: any };
+const data = doc.data;
+---
+<BaseLayout title={data.title}>
+  <article class="grid md:grid-cols-5 gap-8">
+    <div class="md:col-span-3 space-y-4">
+      {data.cover && <img src={data.cover} alt={data.title} class="rounded-xl" />}
+      <slot />
+    </div>
+    <aside class="md:col-span-2 space-y-2 text-sm">
+      <div class="opacity-60">{new Date(data.date).toLocaleDateString()}</div>
+      {data.links && (
+        <ul class="space-y-1">
+          {data.links.map((l:any) => <li><a class="underline" href={l.url} target="_blank">{l.label}</a></li>)}
+        </ul>
+      )}
+    </aside>
+  </article>
+  {data.hasThree && <ThreeBlock client:only="react" cfgJSON={data.threeConfig} />}
+</BaseLayout>
+
+---
+// FILE: src/pages/events/index.astro
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { getCollection } from 'astro:content';
+
+const events = (await getCollection('events')).sort((a,b) => new Date(a.data.date).getTime() - new Date(b.data.date).getTime());
+---
+<BaseLayout title="Events">
+  <ul class="space-y-4">
+    {events.map(e => (
+      <li class="border rounded-xl p-4 flex items-center justify-between">
+        <div>
+          <div class="text-sm opacity-60">{new Date(e.data.date).toLocaleDateString()} • {e.data.city}</div>
+          <div class="text-lg font-medium">{e.data.title} @ {e.data.venue}</div>
+        </div>
+        {e.data.ticketUrl && <a class="underline" href={e.data.ticketUrl} target="_blank">Tickets</a>}
+      </li>
+    ))}
+  </ul>
+</BaseLayout>
+
+---
+// FILE: src/pages/links.astro
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+<BaseLayout title="Links">
+  <ul class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <li class="border rounded-xl p-4"><a class="underline" href="https://open.spotify.com/" target="_blank">Spotify</a></li>
+    <li class="border rounded-xl p-4"><a class="underline" href="https://music.apple.com/" target="_blank">Apple Music</a></li>
+    <li class="border rounded-xl p-4"><a class="underline" href="https://bandcamp.com/" target="_blank">Bandcamp</a></li>
+    <li class="border rounded-xl p-4"><a class="underline" href="https://instagram.com/" target="_blank">Instagram</a></li>
+    <li class="border rounded-xl p-4"><a class="underline" href="https://x.com/" target="_blank">X / Twitter</a></li>
+  </ul>
+</BaseLayout>
+
+---
+// FILE: src/pages/about.astro
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+<BaseLayout title="About">
+  <div class="prose prose-neutral dark:prose-invert">
+    <h1>About</h1>
+    <p>Short bio here. Swap in your press text, gear highlights, and contact.</p>
+  </div>
+</BaseLayout>
+
+---
+// FILE: src/content/works/example-work.mdx
+---
+title: "Example Work"
+date: "2025-10-01"
+cover: "/covers/example.jpg"
+excerpt: "A short description of the work."
+hasThree: true
+threeConfig: "{\"radius\":1.2,\"tube\":0.28}"
+links:
+  - { label: "Case Study", url: "https://example.com" }
+---
+
+This is the body of the work entry. You can include **markdown**, images, and embeds.
+
+---
+// FILE: src/content/releases/example-release.mdx
+---
+title: "Example Release"
+date: "2025-08-15"
+cover: "/covers/release.jpg"
+excerpt: "Lead single from the forthcoming EP."
+platforms:
+  spotify: "https://open.spotify.com/"
+  apple: "https://music.apple.com/"
+  bandcamp: "https://bandcamp.com/"
+hasThree: false
+---
+
+Tracklist, credits, and press quotes can go here.
+
+---
+// FILE: src/content/projects/example-project.mdx
+---
+title: "Client Visual Project"
+date: "2025-07-02"
+cover: "/covers/project.jpg"
+role: "Director / Composer"
+collaborators: ["Nam Mac"]
+links:
+  - { label: "Client", url: "https://client-site.com" }
+---
+
+Notes on your approach and results.
+
+---
+// FILE: src/content/events/2025-12-05-club-asia.mdx
+---
+title: "wev Live"
+date: "2025-12-05"
+city: "Tokyo"
+venue: "Club Asia"
+ticketUrl: "https://tickets.example.com"
+status: "scheduled"
+---
+
+$1// FILE: public/covers/.gitkeep
+// (placeholder directory for images)
+
+---
+// FILE: public/uploads/.gitkeep
+// (placeholder directory for CMS uploads)
+
+---
+// FILE: public/admin/index.html
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>wev.world • CMS</title>
+    <style>body{font-family:ui-sans-serif,system-ui;}</style>
+  </head>
+  <body>
+    <!-- Decap CMS UI -->
+    <script src="https://unpkg.com/decap-cms@^3.0.0/dist/decap-cms.js"></script>
+  </body>
+</html>
+
+---
+// FILE: public/admin/config.yml
+local_backend: true # enables local editing without OAuth
+backend:
+  name: github
+  repo: YOUR_GITHUB_USERNAME/YOUR_REPO_NAME # <-- change this
+  branch: main
+media_folder: "public/uploads"       # files go in repo
+public_folder: "/uploads"            # site paths
+site_url: "https://wev.world"
+collections:
+  - name: "works"
+    label: "Works"
+    folder: "src/content/works"
+    create: true
+    slug: "{{slug}}"
+    fields:
+      - { label: Title, name: title, widget: string }
+      - { label: Date, name: date, widget: datetime }
+      - { label: Cover, name: cover, widget: image, required: false }
+      - { label: Excerpt, name: excerpt, widget: text, required: false }
+      - { label: Tags, name: tags, widget: list, required: false }
+      - { label: Links, name: links, widget: list, required: false, fields: [ {label: Label, name: label, widget: string}, {label: URL, name: url, widget: string} ] }
+      - { label: Has 3D, name: hasThree, widget: boolean, required: false }
+      - { label: Three Config (JSON), name: threeConfig, widget: text, required: false }
+      - { label: Body, name: body, widget: markdown }
+
+  - name: "releases"
+    label: "Releases"
+    folder: "src/content/releases"
+    create: true
+    slug: "{{slug}}"
+    fields:
+      - { label: Title, name: title, widget: string }
+      - { label: Date, name: date, widget: datetime }
+      - { label: Cover, name: cover, widget: image, required: false }
+      - { label: Excerpt, name: excerpt, widget: text, required: false }
+      - label: Platforms
+        name: platforms
+        widget: object
+        fields:
+          - { label: Spotify, name: spotify, widget: string, required: false }
+          - { label: Apple Music, name: apple, widget: string, required: false }
+          - { label: Bandcamp, name: bandcamp, widget: string, required: false }
+      - { label: Has 3D, name: hasThree, widget: boolean, required: false }
+      - { label: Three Config (JSON), name: threeConfig, widget: text, required: false }
+      - { label: Body, name: body, widget: markdown }
+
+  - name: "projects"
+    label: "Projects"
+    folder: "src/content/projects"
+    create: true
+    slug: "{{slug}}"
+    fields:
+      - { label: Title, name: title, widget: string }
+      - { label: Date, name: date, widget: datetime }
+      - { label: Cover, name: cover, widget: image, required: false }
+      - { label: Role, name: role, widget: string, required: false }
+      - { label: Collaborators, name: collaborators, widget: list, required: false }
+      - { label: Links, name: links, widget: list, required: false, fields: [ {label: Label, name: label, widget: string}, {label: URL, name: url, widget: string} ] }
+      - { label: Has 3D, name: hasThree, widget: boolean, required: false }
+      - { label: Three Config (JSON), name: threeConfig, widget: text, required: false }
+      - { label: Body, name: body, widget: markdown }
+
+  - name: "events"
+    label: "Events"
+    folder: "src/content/events"
+    create: true
+    slug: "{{slug}}"
+    fields:
+      - { label: Title, name: title, widget: string }
+      - { label: Date, name: date, widget: datetime }
+      - { label: City, name: city, widget: string }
+      - { label: Venue, name: venue, widget: string }
+      - { label: Ticket URL, name: ticketUrl, widget: string, required: false }
+      - { label: Status, name: status, widget: select, options: [scheduled, postponed, cancelled], required: false }
+      - { label: Notes, name: body, widget: markdown, required: false }
+
+  - name: "pages"
+    label: "Pages"
+    files:
+      - label: About
+        name: about
+        file: "src/pages/about.astro"
+        fields:
+          - { label: Content, name: body, widget: code, default: "<BaseLayout title=\"About\">...</BaseLayout>", hint: "Edit the About page content in Astro/HTML." }
+      - label: Links Page
+        name: links
+        file: "src/pages/links.astro"
+        fields:
+          - { label: Content, name: body, widget: code, default: "<BaseLayout title=\"Links\">...</BaseLayout>", hint: "Edit the Links page content in Astro/HTML." }
+
+// (placeholder directory for images)
+
+---
+// FILE: .github/workflows/deploy.yml
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install
+        run: npm ci || npm i
+      - name: Build
+        run: npm run build
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+---
+// FILE: README.md
+# Rolling Archive (Astro)
+
+## Quick start
+1. **Install**: `npm i`
+2. **Dev**: `npm run dev` → http://localhost:4321
+3. **Edit content** in `src/content/*` (Markdown/MDX with frontmatter).
+4. **Three.js**: set `hasThree: true` and tweak `threeConfig` JSON per entry.
+5. **Build**: `npm run build` → static site in `dist/`.
+6. **Deploy**: push to `main`. GitHub Actions builds and publishes to Pages.
+
+## GitHub Pages setup
+- In **Repo → Settings → Pages**: set **Source** to "GitHub Actions" (uses the provided workflow).
+- (Optional) **Custom domain**: set **wev.world** in Pages settings; GitHub will add a `CNAME`.
+- Update `site` in `astro.config.mjs` to `https://wev.world` (done).
+
+## Content model
+- **works**: general portfolio entries
+- **releases**: music releases (with platform links)
+- **projects**: collaborations/commissions
+- **events**: tour/show entries listed at `/events`
+- **pages**: simple static pages like About/Links
+
+## Styling
+- Tailwind is included. Edit `src/styles/global.css` and component classes.
+
+## CMS (Decap)
+- An `/admin` app is included for a no-server, Git-based CMS.
+- **Local editing (no OAuth needed):** run `npx decap-server` in one terminal and `npm run dev` in another, then visit http://localhost:4321/admin.
+- **Production editing at wev.world/admin:** requires a small GitHub OAuth proxy; you can add it later. For now, edit locally and push.
+
+## Notes
+- Everything is static (no server). Perfect for GitHub Pages.
+- For image hosting, drop files under `/public/covers/` or `/public/uploads/` and reference as `/covers/...` or `/uploads/...`.
