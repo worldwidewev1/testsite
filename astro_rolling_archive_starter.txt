@@ -1,6 +1,6 @@
 # Astro Rolling Archive Starter
 
-Below is a complete, minimal skeleton you can drop into a new repo. Each section is a file. Create the same paths and paste the contents.
+Below is a complete, minimal skeleton you can drop into a new repo. Each section is a file. Create the same paths and paste the contents. Push!
 
 ---
 // FILE: package.json
